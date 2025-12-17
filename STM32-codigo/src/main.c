@@ -20,6 +20,8 @@
 #include "main.h"
 #include <stdio.h>
 #include <stdint.h>
+#include "ssd1306.h"
+#include "ssd1306_fonts.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -35,7 +37,8 @@
 #define ECHO_PORT GPIOA
 uint8_t AMB, RHD, TEMP, TCD, SUM;
 uint32_t pMillis, cMillis;
-uint16_t SOIL1;    // HL-69
+uint16_t SOIL1;    // HL-69 1
+uint16_t SOIL2;	   // HL-69 2
 uint16_t RAIN;   // Sensor agua
 float tCelsius = 0;
 float tFahrenheit = 0;
@@ -58,6 +61,8 @@ uint16_t TANK  = 0;  // cm
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim1;
 
 UART_HandleTypeDef huart1;
@@ -75,6 +80,7 @@ static void MX_TIM1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
 void microDelay(uint16_t delay);
 /* USER CODE BEGIN PFP */
 
@@ -175,6 +181,7 @@ int main(void)
   MX_ADC1_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim1);
   HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_RESET);
@@ -192,72 +199,106 @@ int main(void)
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
 
+  ssd1306_Init();
+  ssd1306_Fill(0);
+  ssd1306_UpdateScreen();
 
   while (1)
   {
-	  // Construimos el mensaje: "SOIL1=1234;AMB=45..."
 
-	          UART_SendString("SOIL1=");
-	          UART_SendNumber(SOIL1);
+	// Construimos el mensaje: "SOIL1=1234;AMB=45..."
 
-	          UART_SendString(";AMB=");
-	          UART_SendNumber(AMB); // Parte entera
-	          UART_SendString(".");
-	          UART_SendNumber(RHD); // Parte decimal
+	UART_SendString("SOIL1=");
+	UART_SendNumber(SOIL1);
 
-	          UART_SendString(";RAIN=");
-	          UART_SendNumber(RAIN);
+	UART_SendString(";SOIL2=");
+	UART_SendNumber(SOIL2);
 
-	          UART_SendString(";TANK=");
-	          UART_SendNumber(TANK);
+	UART_SendString(";AMB=");
+	UART_SendNumber(AMB); // Parte entera
+	UART_SendString(".");
+	UART_SendNumber(RHD); // Parte decimal
 
-	          UART_SendString(";TEMP=");
-	          UART_SendNumber(TEMP); // Parte entera
-	          UART_SendString(".");
-	          UART_SendNumber(TCD); // Parte decimal
+	UART_SendString(";RAIN=");
+	UART_SendNumber(RAIN);
 
-	          UART_SendString("\r\n"); // Fin de línea
+	UART_SendString(";TANK=");
+	UART_SendNumber(TANK);
 
-	          HAL_Delay(100);
-	 // HAL_UART_Transmit(&huart2, (uint8_t*)uartBuffer, strlen(uartBuffer), 100);
-	  //HAL_Delay(1000);
-	  //HAL_UART_Transmit(&huart2, (uint8_t*)"Leyendo ADC...\r\n", 16, 100);
-	  /* ---- HL-69 (PA0 / ADC1_IN5) ---- */
-	  sConfig.Channel = ADC_CHANNEL_6;
-	  HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-	  HAL_ADC_Start(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 1000);
-	  SOIL1 = HAL_ADC_GetValue(&hadc1);
-	  /* ---- SENSOR AGUA (PA1 / ADC1_IN6) ---- */
-	  sConfig.Channel = ADC_CHANNEL_8;
-	  HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-	  HAL_ADC_Start(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 1000);
-	  RAIN = HAL_ADC_GetValue(&hadc1);
+	UART_SendString(";TEMP=");
+	UART_SendNumber(TEMP); // Parte entera
+	UART_SendString(".");
+	UART_SendNumber(TCD); // Parte decimal
 
-	  //HAL_UART_Transmit(&huart2, (uint8_t*)"Leyendo DHT11...\r\n", 18, 100);
-	  /*----DHT11-------*/
-	  if(DHT11_Start())
-	  {
-	 	  AMB = DHT11_Read(); // Relative humidity integral
-	 	  RHD = DHT11_Read(); // Relative humidity decimal
-	 	  TEMP = DHT11_Read(); // Celsius integral
-	 	  TCD = DHT11_Read(); // Celsius decimal
-	 	  SUM = DHT11_Read(); // Check sum
-	 	  if (AMB + RHD + TEMP + TCD == SUM)
-	 	  {
-	 	  	 // Can use RHI and TCI for any purposes if whole number only needed
-	 	  	 tCelsius = (float)TEMP + (float)(TCD/10.0);
-	 	  	 tFahrenheit = tCelsius * 9/5 + 32;
-	 	  	 RH = (float)AMB + (float)(RHD/10.0);
-	 	  	 // Can use tCelsius, tFahrenheit and RH for any purposes
-	 	  }
+	UART_SendString("\r\n"); // Fin de línea
 
-	   }
+	HAL_Delay(100);
+	/* ---- HL-69 1 (ADC1_IN6) ---- */
+	sConfig.Channel = ADC_CHANNEL_6;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 1000);
+	/* ---- HL-69 2 (ADC1_IN9) ---- */
+	sConfig.Channel = ADC_CHANNEL_9;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 1000);
+	SOIL2 = HAL_ADC_GetValue(&hadc1);
+	/* ---- SENSOR AGUA (ADC1_IN8) ---- */
+	sConfig.Channel = ADC_CHANNEL_8;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 1000);
+	RAIN = HAL_ADC_GetValue(&hadc1);
+	// --- LEER CANAL 6 (Humedad Suelo) ---
+	sConfig.Channel = ADC_CHANNEL_6;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-	   HAL_Delay(500);
-	   //HAL_UART_Transmit(&huart2, (uint8_t*)"Leyendo Ultrasonico...\r\n", 24, 100);
-	   /*----ULTRASONICO----*/
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+	SOIL1 = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Stop(&hadc1);
+
+	// --- LEER CANAL 8 (Lluvia) ---
+	sConfig.Channel = ADC_CHANNEL_8;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+	RAIN = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Stop(&hadc1);
+
+	// --- LEER CANAL 9 (Humedad Suelo 2) ---
+	sConfig.Channel = ADC_CHANNEL_9;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+	SOIL2 = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Stop(&hadc1);
+
+	/*----DHT11-------*/
+	if(DHT11_Start())
+	{
+		AMB = DHT11_Read(); // Relative humidity integral
+	 	RHD = DHT11_Read(); // Relative humidity decimal
+	 	TEMP = DHT11_Read(); // Celsius integral
+	 	TCD = DHT11_Read(); // Celsius decimal
+	 	SUM = DHT11_Read(); // Check sum
+	 	if (AMB + RHD + TEMP + TCD == SUM)
+	 	{
+	 		// Can use RHI and TCI for any purposes if whole number only needed
+	 	  	tCelsius = (float)TEMP + (float)(TCD/10.0);
+	 	  	tFahrenheit = tCelsius * 9/5 + 32;
+	 	  	RH = (float)AMB + (float)(RHD/10.0);
+	 	  	// Can use tCelsius, tFahrenheit and RH for any purposes
+	 	}
+
+	 }
+
+	 HAL_Delay(500);
+	 //HAL_UART_Transmit(&huart2, (uint8_t*)"Leyendo Ultrasonico...\r\n", 24, 100);
+	 /*----ULTRASONICO----*/
 	 HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_SET);  // pull the TRIG pin HIGH
 	 __HAL_TIM_SET_COUNTER(&htim1, 0);
 	 while (__HAL_TIM_GET_COUNTER (&htim1) < 10);  // wait for 10 us
@@ -274,15 +315,36 @@ int main(void)
 	 Value2 = __HAL_TIM_GET_COUNTER (&htim1);
 
 	 TANK = (Value2-Value1)* 0.034/2;
+	 /*----OLED----*/
+	 if (TANK>13)
+	 {
+		 ssd1306_Fill(0);
+		 ssd1306_SetCursor(15, 27);
+		 ssd1306_WriteString("Tanque Vacio!!!", Font_7x10, 1);
+		 ssd1306_UpdateScreen();
+	 }
+	 else
+	 {
+		 ssd1306_Fill(0);
+		 ssd1306_SetCursor(15, 27);
+		 ssd1306_WriteString("Tanque Funcional :)", Font_7x10, 1);
+		 ssd1306_UpdateScreen();
+	 }
+	 /*----BOMBA----*/
+	 if (RAIN<2000 && SOIL1>3000 && TANK<13)
+	 {
+		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET); //On
+	 }
+	 else if (RAIN<2000 && SOIL2<2000 && TANK<13)
+	 {
+		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET); //On
+	 }
+	 else
+	 {
+		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET); //Off
+	 }
 
-	 /* ---- ENVIO POR UART A ESP32 ---- */
-	 // Formato: SOIL1=1234;AMB=45.0;RAIN=3000;TANK=20;TEMP=25.4
-	 // Usamos %d.%d para AMB y TEMP para aprovechar tus variables de parte entera y decimal
-	 //sprintf(uartBuffer, "SOIL1=%d;AMB=%d.%d;RAIN=%d;TANK=%d;TEMP=%d.%d\r\n", SOIL1, AMB, RHD, RAIN, TANK, TEMP, TCD);
 
-	 // Enviamos el mensaje
-	 //HAL_UART_Transmit(&huart1, (uint8_t*)uartBuffer, strlen(uartBuffer), 100);
-	 //HAL_UART_Transmit(&huart2, (uint8_t*)uartBuffer, strlen(uartBuffer), 100);
 
 	 HAL_Delay(50);
     /* USER CODE END WHILE */
@@ -394,18 +456,52 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN ADC1_Init 2 */
-  sConfig.Channel = ADC_CHANNEL_8;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-  sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.OffsetNumber = ADC_OFFSET_NONE;
-  sConfig.Offset = 0;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00E12573;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE END ADC1_Init 2 */
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -546,7 +642,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11|GPIO_PIN_12, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PB0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
@@ -562,7 +658,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11;
+  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
