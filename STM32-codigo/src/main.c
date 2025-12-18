@@ -331,13 +331,13 @@ int main(void)
 		 ssd1306_UpdateScreen();
 	 }
 	 /*----BOMBA----*/
-	 if (RAIN<2000 && SOIL1>3000 && TANK<13)
+	 if (RAIN<2000 && SOIL1>3000 && SOIL2<2000 && TANK<13)
 	 {
 		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET); //On
 	 }
-	 else if (RAIN<2000 && SOIL2<2000 && TANK<13)
+	 else if (RAIN>2000)
 	 {
-		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET); //On
+		 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET); //Off
 	 }
 	 else
 	 {
